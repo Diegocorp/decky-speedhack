@@ -11,112 +11,192 @@ import {
 import React, { useEffect, useState, VFC } from "react";
 import { FaFastForward } from "react-icons/fa";
 
-const SPEED_PRESETS = [
-  { label: "0.25x (Slow)", value: 0.25 },
-  { label: "0.5x (Half)", value: 0.5 },
-  { label: "1x (Normal)", value: 1.0 },
-  { label: "2x (Fast)", value: 2.0 },
-  { label: "4x (Faster)", value: 4.0 },
-  { label: "8x (Insane)", value: 8.0 },
-];
+// ---------------------------------------------------------------------------
+// Steam internal API helpers (available in the Decky/Steam frontend context)
+// ---------------------------------------------------------------------------
 
-// Inline style for the launch option box
-const launchBoxStyle: React.CSSProperties = {
+const SteamClient = (window as any).SteamClient;
+
+/** Returns the AppID of the currently running game, or null. */
+function getRunningAppId(): number | null {
+  try {
+    const apps: Map<number, any> =
+      (window as any).collectionStore?.allAppsCollection?.apps;
+    if (!apps) return null;
+    for (const [id, app] of apps) {
+      if (app.isRunning) return id;
+    }
+  } catch {}
+  return null;
+}
+
+/** Returns display name for an AppID. */
+function getAppName(appId: number): string {
+  try {
+    const app = (window as any).collectionStore?.allAppsCollection?.apps?.get(appId);
+    return app?.display_name ?? `App ${appId}`;
+  } catch {}
+  return `App ${appId}`;
+}
+
+/** Reads the current launch options for an AppID via Steam's API. */
+async function getAppLaunchOptions(appId: number): Promise<string> {
+  try {
+    const details = await SteamClient?.Apps?.GetAppOverviewByAppID?.(appId);
+    return details?.launch_options ?? "";
+  } catch {}
+  return "";
+}
+
+/** Writes new launch options for an AppID via Steam's API. */
+async function setAppLaunchOptions(appId: number, options: string): Promise<void> {
+  await SteamClient?.Apps?.SetAppLaunchOptions?.(appId, options);
+}
+
+const LD_PRELOAD_MARKER = "libspeedhack.so";
+
+// ---------------------------------------------------------------------------
+// Styles
+// ---------------------------------------------------------------------------
+
+const infoBoxStyle: React.CSSProperties = {
   background: "rgba(255,255,255,0.07)",
   borderRadius: "4px",
   padding: "8px",
   fontSize: "11px",
-  fontFamily: "monospace",
   wordBreak: "break-all",
-  lineHeight: "1.5",
+  lineHeight: "1.6",
   color: "#c6d4df",
-  userSelect: "text",
+};
+
+const hintStyle: React.CSSProperties = {
+  fontSize: "11px",
+  color: "#8b929a",
   marginTop: "4px",
 };
 
-interface SpeedHackContentProps {
+// ---------------------------------------------------------------------------
+// Component
+// ---------------------------------------------------------------------------
+
+interface Props {
   serverAPI: ServerAPI;
 }
 
-const SpeedHackContent: VFC<SpeedHackContentProps> = ({ serverAPI }) => {
-  const [enabled, setEnabled] = useState<boolean>(false);
-  const [speedMultiplier, setSpeedMultiplier] = useState<number>(1.0);
-  const [speedStatus, setSpeedStatus] = useState<string>("Idle");
-  const [launchOption, setLaunchOption] = useState<string>("");
-  const [buildStatus, setBuildStatus] = useState<string>("");
-  const [copied, setCopied] = useState<boolean>(false);
-  const [diagnostics, setDiagnostics] = useState<string>("");
+const SpeedHackContent: VFC<Props> = ({ serverAPI }) => {
+  const [enabled, setEnabled]           = useState(false);
+  const [speed, setSpeed]               = useState(1.0);
+  const [speedStatus, setSpeedStatus]   = useState("");
 
-  // Load persisted state and launch option on mount
+  const [runningAppId, setRunningAppId] = useState<number | null>(null);
+  const [appName, setAppName]           = useState("");
+  const [appConfigured, setAppConfigured] = useState(false);
+  const [libPath, setLibPath]           = useState("");
+  const [setupMsg, setSetupMsg]         = useState("");
+
+  // -------------------------------------------------------------------------
+  // On mount: load state + detect running game
+  // -------------------------------------------------------------------------
   useEffect(() => {
     (async () => {
-      const stateResult = await serverAPI.callPluginMethod<{}, { enabled: boolean; speed: number }>(
+      // Restore speed state
+      const stateRes = await serverAPI.callPluginMethod<{}, { enabled: boolean; speed: number }>(
         "get_state", {}
       );
-      if (stateResult.success) {
-        setEnabled(stateResult.result.enabled);
-        setSpeedMultiplier(stateResult.result.speed);
+      if (stateRes.success) {
+        setEnabled(stateRes.result.enabled);
+        setSpeed(stateRes.result.speed);
       }
 
-      // Pre-load the launch option so it's always visible
-      const launchResult = await serverAPI.callPluginMethod<{}, { message: string }>(
-        "get_launch_option", {}
+      // Get library path from backend
+      const pathRes = await serverAPI.callPluginMethod<{}, { path: string }>(
+        "get_lib_path", {}
       );
-      if (launchResult.success) {
-        setLaunchOption(launchResult.result.message);
-      }
+      if (pathRes.success) setLibPath(pathRes.result.path);
+
+      // Detect running game
+      refreshRunningGame();
     })();
   }, []);
 
-  const applySpeed = async (newSpeed: number, newEnabled: boolean) => {
-    setSpeedStatus("Applying...");
-    const result = await serverAPI.callPluginMethod<
+  const refreshRunningGame = async () => {
+    const appId = getRunningAppId();
+    setRunningAppId(appId);
+    if (appId) {
+      setAppName(getAppName(appId));
+      const opts = await getAppLaunchOptions(appId);
+      setAppConfigured(opts.includes(LD_PRELOAD_MARKER));
+    }
+  };
+
+  // -------------------------------------------------------------------------
+  // Speed control
+  // -------------------------------------------------------------------------
+  const applySpeed = async (newEnabled: boolean, newSpeed: number) => {
+    const res = await serverAPI.callPluginMethod<
       { enabled: boolean; speed: number },
       { message: string }
     >("set_speed", { enabled: newEnabled, speed: newSpeed });
-    setSpeedStatus(result.success ? result.result.message : "Error: " + result.result);
+    if (res.success) setSpeedStatus(res.result.message);
   };
 
   const handleToggle = async (val: boolean) => {
     setEnabled(val);
-    await applySpeed(speedMultiplier, val);
+    await applySpeed(val, speed);
   };
 
   const handleSlider = async (val: number) => {
     const mapped = parseFloat((val * 0.25).toFixed(2));
-    setSpeedMultiplier(mapped);
-    if (enabled) await applySpeed(mapped, true);
+    setSpeed(mapped);
+    if (enabled) await applySpeed(true, mapped);
   };
 
-  const handlePreset = async (value: number) => {
-    setSpeedMultiplier(value);
-    if (enabled) await applySpeed(value, true);
+  // -------------------------------------------------------------------------
+  // Per-game setup — uses Steam's own API, no copy-paste needed
+  // -------------------------------------------------------------------------
+  const handleEnable = async () => {
+    if (!runningAppId || !libPath) return;
+    setSetupMsg("Applying...");
+    try {
+      const current = await getAppLaunchOptions(runningAppId);
+      // Avoid duplicates
+      const cleaned = current.replace(/LD_PRELOAD=[^\s]+ /g, "").trim();
+      const newOpts = `LD_PRELOAD=${libPath} ${cleaned || "%command%"}`.trim();
+      await setAppLaunchOptions(runningAppId, newOpts);
+      setAppConfigured(true);
+      setSetupMsg("Done! Restart the game once to activate.");
+    } catch (e) {
+      setSetupMsg(`Error: ${e}`);
+    }
   };
 
-  const handleBuild = async () => {
-    setBuildStatus("Building...");
-    const result = await serverAPI.callPluginMethod<{}, { message: string }>(
-      "install_library", {}
-    );
-    const msg = result.success ? result.result.message : "Build failed";
-    setBuildStatus(msg);
-
-    // Refresh launch option after build
-    const launchResult = await serverAPI.callPluginMethod<{}, { message: string }>(
-      "get_launch_option", {}
-    );
-    if (launchResult.success) setLaunchOption(launchResult.result.message);
+  const handleDisable = async () => {
+    if (!runningAppId) return;
+    setSetupMsg("Removing...");
+    try {
+      const current = await getAppLaunchOptions(runningAppId);
+      const cleaned = current.replace(/LD_PRELOAD=[^\s]+ ?/g, "").trim();
+      await setAppLaunchOptions(runningAppId, cleaned);
+      setAppConfigured(false);
+      setSetupMsg("Removed. Restart game to fully deactivate.");
+    } catch (e) {
+      setSetupMsg(`Error: ${e}`);
+    }
   };
 
-  const sliderValue = Math.round(speedMultiplier / 0.25);
+  const sliderValue = Math.round(speed / 0.25);
 
+  // -------------------------------------------------------------------------
+  // Render
+  // -------------------------------------------------------------------------
   return (
     <>
+      {/* ── Speed control ── */}
       <PanelSection title="Speed Control">
         <PanelSectionRow>
           <ToggleField
             label="Enable Speed Hack"
-            description={speedStatus}
+            description={speedStatus || (enabled ? `Active at ${speed}x` : "Disabled")}
             checked={enabled}
             onChange={handleToggle}
           />
@@ -124,12 +204,9 @@ const SpeedHackContent: VFC<SpeedHackContentProps> = ({ serverAPI }) => {
 
         <PanelSectionRow>
           <SliderField
-            label={`Speed: ${speedMultiplier}x`}
-            description="Adjust game speed multiplier"
+            label={`Speed: ${speed}x`}
             value={sliderValue}
-            min={1}
-            max={32}
-            step={1}
+            min={1} max={32} step={1}
             disabled={!enabled}
             onChange={handleSlider}
             notchCount={5}
@@ -144,80 +221,57 @@ const SpeedHackContent: VFC<SpeedHackContentProps> = ({ serverAPI }) => {
         </PanelSectionRow>
       </PanelSection>
 
-      <PanelSection title="Presets">
-        {SPEED_PRESETS.map((preset) => (
-          <PanelSectionRow key={preset.value}>
-            <ButtonItem
-              label={preset.label}
-              layout="below"
-              onClick={() => handlePreset(preset.value)}
-              disabled={!enabled}
-            />
-          </PanelSectionRow>
-        ))}
-      </PanelSection>
-
-      <PanelSection title="Setup">
-        {/* Launch option box */}
+      {/* ── Per-game setup ── */}
+      <PanelSection title="Game Setup">
         <PanelSectionRow>
           <div style={{ width: "100%" }}>
-            <div style={{ fontSize: "12px", marginBottom: "4px", color: "#8b929a" }}>
-              Steam Launch Option
-            </div>
-            <div style={launchBoxStyle}>
-              {launchOption
-                ? launchOption
-                : "Library not built yet — click Build below"}
-            </div>
-            <div style={{ fontSize: "11px", color: "#8b929a", marginTop: "4px" }}>
-              Paste into: Library → game → Properties → Launch Options
-            </div>
+            {runningAppId ? (
+              <div style={infoBoxStyle}>
+                <div><b>{appName}</b></div>
+                <div style={{ marginTop: "4px" }}>
+                  {appConfigured
+                    ? "✓ SpeedHack enabled for this game"
+                    : "⚠ Not yet enabled for this game"}
+                </div>
+              </div>
+            ) : (
+              <div style={infoBoxStyle}>No game running</div>
+            )}
           </div>
         </PanelSectionRow>
 
-        {/* Copy button — only shown when the library exists */}
-        {launchOption && !launchOption.startsWith("Library") && (
+        {runningAppId && (
           <PanelSectionRow>
-            {React.createElement(DialogButton as React.ElementType, {
-              onClick: async () => {
-                await navigator.clipboard.writeText(launchOption);
-                setCopied(true);
-                setTimeout(() => setCopied(false), 2000);
-              },
-            }, copied ? "Copied!" : "Copy Launch Option")}
+            {appConfigured
+              ? React.createElement(DialogButton as React.ElementType, {
+                  onClick: handleDisable,
+                }, "Remove from this game")
+              : React.createElement(DialogButton as React.ElementType, {
+                  onClick: handleEnable,
+                }, "Enable for this game")}
           </PanelSectionRow>
         )}
 
+        {/* Refresh button in case game changed */}
         <PanelSectionRow>
-          {React.createElement(DialogButton as React.ElementType, {
-            onClick: handleBuild,
-          }, "Build / Rebuild Library")}
+          <ButtonItem
+            label="Refresh running game"
+            layout="below"
+            onClick={refreshRunningGame}
+          />
         </PanelSectionRow>
 
-        {buildStatus !== "" && (
+        {setupMsg !== "" && (
           <PanelSectionRow>
-            <div style={{ fontSize: "11px", color: "#8b929a", wordBreak: "break-all" }}>
-              {buildStatus}
-            </div>
+            <div style={hintStyle}>{setupMsg}</div>
           </PanelSectionRow>
         )}
 
-        <PanelSectionRow>
-          {React.createElement(DialogButton as React.ElementType, {
-            onClick: async () => {
-              setDiagnostics("Checking...");
-              const result = await serverAPI.callPluginMethod<{}, { message: string }>(
-                "get_diagnostics", {}
-              );
-              setDiagnostics(result.success ? result.result.message : "Failed");
-            },
-          }, "Run Diagnostics")}
-        </PanelSectionRow>
-
-        {diagnostics !== "" && (
+        {appConfigured && (
           <PanelSectionRow>
-            <div style={{ ...launchBoxStyle, fontSize: "10px", whiteSpace: "pre-wrap" }}>
-              {diagnostics}
+            <div style={hintStyle}>
+              First time? Restart the game once. After that, the speed slider
+              works live — no restart needed.
             </div>
           </PanelSectionRow>
         )}

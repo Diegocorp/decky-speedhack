@@ -6,7 +6,6 @@ import {
   ServerAPI,
   SliderField,
   staticClasses,
-  ToggleField,
 } from "decky-frontend-lib";
 import React, { useEffect, useState, VFC } from "react";
 import { FaFastForward } from "react-icons/fa";
@@ -84,7 +83,6 @@ interface Props {
 }
 
 const SpeedHackContent: VFC<Props> = ({ serverAPI }) => {
-  const [enabled, setEnabled]           = useState(false);
   const [speed, setSpeed]               = useState(1.0);
   const [speedStatus, setSpeedStatus]   = useState("");
 
@@ -104,7 +102,6 @@ const SpeedHackContent: VFC<Props> = ({ serverAPI }) => {
         "get_state", {}
       );
       if (stateRes.success) {
-        setEnabled(stateRes.result.enabled);
         setSpeed(stateRes.result.speed);
       }
 
@@ -137,25 +134,17 @@ const SpeedHackContent: VFC<Props> = ({ serverAPI }) => {
   };
 
   // -------------------------------------------------------------------------
-  // Speed control
+  // Speed control — enabled automatically when speed != 1x
   // -------------------------------------------------------------------------
-  const applySpeed = async (newEnabled: boolean, newSpeed: number) => {
-    const res = await serverAPI.callPluginMethod<
-      { enabled: boolean; speed: number },
-      { message: string }
-    >("set_speed", { enabled: newEnabled, speed: newSpeed });
-    if (res.success) setSpeedStatus(res.result.message);
-  };
-
-  const handleToggle = async (val: boolean) => {
-    setEnabled(val);
-    await applySpeed(val, speed);
-  };
-
   const handleSlider = async (val: number) => {
     const mapped = parseFloat((val * 0.25).toFixed(2));
     setSpeed(mapped);
-    if (enabled) await applySpeed(true, mapped);
+    const enabled = mapped !== 1.0;
+    const res = await serverAPI.callPluginMethod<
+      { enabled: boolean; speed: number },
+      { message: string }
+    >("set_speed", { enabled, speed: mapped });
+    if (res.success) setSpeedStatus(res.result.message);
   };
 
   // -------------------------------------------------------------------------
@@ -201,20 +190,11 @@ const SpeedHackContent: VFC<Props> = ({ serverAPI }) => {
       {/* ── Speed control ── */}
       <PanelSection title="Speed Control">
         <PanelSectionRow>
-          <ToggleField
-            label="Enable Speed Hack"
-            description={speedStatus || (enabled ? `Active at ${speed}x` : "Disabled")}
-            checked={enabled}
-            onChange={handleToggle}
-          />
-        </PanelSectionRow>
-
-        <PanelSectionRow>
           <SliderField
-            label={`Speed: ${speed}x`}
+            label={speed === 1.0 ? "Speed: 1x (Normal)" : `Speed: ${speed}x`}
+            description={speedStatus || (speed !== 1.0 ? `Active at ${speed}x` : "Normal speed")}
             value={sliderValue}
             min={1} max={32} step={1}
-            disabled={!enabled}
             onChange={handleSlider}
             notchCount={5}
             notchLabels={[

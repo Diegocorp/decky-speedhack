@@ -1,6 +1,5 @@
 import {
   ButtonItem,
-  definePlugin,
   DialogButton,
   PanelSection,
   PanelSectionRow,
@@ -159,13 +158,12 @@ const SpeedHackContent: VFC<SpeedHackContentProps> = ({ serverAPI }) => {
   );
 };
 
-export default definePlugin((serverApi: ServerAPI) => {
-  return {
-    title: <div className={staticClasses.Title}>SpeedHack</div>,
-    content: <SpeedHackContent serverAPI={serverApi} />,
-    icon: <FaFastForward />,
-    onDismount() {
-      // Nothing to clean up
-    },
-  };
+// Export a plain factory function — Decky calls eval(bundle) and expects
+// the result to be a function. Using definePlugin() calls DFL at eval time
+// which can fail if the runtime DFL version differs; a raw function is safe.
+export default (serverApi: ServerAPI) => ({
+  title: <div className={staticClasses.Title}>SpeedHack</div>,
+  content: <SpeedHackContent serverAPI={serverApi} />,
+  icon: <FaFastForward />,
+  onDismount() {},
 });

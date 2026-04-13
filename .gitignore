@@ -2,6 +2,7 @@ node_modules/
 dist/
 build/
 *.zip
+*.tar.gz
 *.so
 __pycache__/
 *.pyc

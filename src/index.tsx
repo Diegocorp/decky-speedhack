@@ -9,7 +9,7 @@ import {
   staticClasses,
   ToggleField,
 } from "decky-frontend-lib";
-import { useEffect, useState, VFC } from "react";
+import React, { useEffect, useState, VFC } from "react";
 import { FaFastForward } from "react-icons/fa";
 
 // Speed presets (multiplier values)
@@ -121,42 +121,38 @@ const SpeedHackContent: VFC<SpeedHackContentProps> = ({ serverAPI }) => {
         {SPEED_PRESETS.map((preset) => (
           <PanelSectionRow key={preset.value}>
             <ButtonItem
+              label={preset.label}
               layout="below"
               onClick={() => handlePreset(preset.value)}
               disabled={!enabled}
-            >
-              {preset.label}
-            </ButtonItem>
+            />
           </PanelSectionRow>
         ))}
       </PanelSection>
 
       <PanelSection title="Setup">
         <PanelSectionRow>
-          <DialogButton
-            onClick={async () => {
+          {/* DialogButton types omit children in v3 */}
+          {React.createElement(DialogButton as React.ElementType, {
+            onClick: async () => {
               const result = await serverAPI.callPluginMethod<{}, { message: string }>(
                 "install_library",
                 {}
               );
               setStatus(result.success ? result.result.message : "Install failed");
-            }}
-          >
-            Build & Install Library
-          </DialogButton>
+            },
+          }, "Build & Install Library")}
         </PanelSectionRow>
         <PanelSectionRow>
-          <DialogButton
-            onClick={async () => {
+          {React.createElement(DialogButton as React.ElementType, {
+            onClick: async () => {
               const result = await serverAPI.callPluginMethod<{}, { message: string }>(
                 "get_launch_option",
                 {}
               );
               setStatus(result.success ? result.result.message : "Failed");
-            }}
-          >
-            Show Launch Option
-          </DialogButton>
+            },
+          }, "Show Launch Option")}
         </PanelSectionRow>
       </PanelSection>
     </>

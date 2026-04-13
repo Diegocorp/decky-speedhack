@@ -47,7 +47,7 @@ static double g_last_refresh_mono = 0.0;
 
 /* Pointers to real libc functions */
 static int  (*real_clock_gettime)(clockid_t, struct timespec *) = NULL;
-static int  (*real_gettimeofday)(struct timeval *, struct timezone *) = NULL;
+static int  (*real_gettimeofday)(struct timeval *, void *) = NULL;
 static time_t (*real_time)(time_t *) = NULL;
 
 /* ---------- helpers ---------- */
@@ -138,7 +138,7 @@ int clock_gettime(clockid_t clk_id, struct timespec *tp) {
     return 0;
 }
 
-int gettimeofday(struct timeval *tv, struct timezone *tz) {
+int gettimeofday(struct timeval *tv, void *tz) {
     load_real_functions();
     int ret = real_gettimeofday(tv, tz);
     if (ret != 0 || !tv) return ret;

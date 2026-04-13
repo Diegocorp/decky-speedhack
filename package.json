@@ -2,6 +2,7 @@
   "name": "decky-speedhack",
   "version": "1.0.0",
   "description": "Decky plugin to control game speed multiplier (TimeFaster clone)",
+  "type": "module",
   "scripts": {
     "build": "rollup -c",
     "dev": "rollup -c -w",
@@ -12,12 +13,16 @@
     "@rollup/plugin-node-resolve": "^15.0.0",
     "@rollup/plugin-typescript": "^11.0.0",
     "@types/react": "^18.0.0",
-    "decky-frontend-lib": "github:SteamDeckHomebrew/decky-frontend-lib#main",
+    "decky-frontend-lib": "^3.25.0",
     "rollup": "^3.0.0",
     "typescript": "^5.0.0"
   },
   "peerDependencies": {
     "react": "*",
     "react-dom": "*"
+  },
+  "dependencies": {
+    "react-icons": "^5.6.0",
+    "tslib": "^2.8.1"
   }
 }

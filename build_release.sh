@@ -19,15 +19,16 @@ PLUGIN_NAME="SpeedHack"
 DIST_DIR="dist"
 BUILD_DIR="build/${PLUGIN_NAME}"
 ZIP_NAME="${PLUGIN_NAME}.zip"
+TAR_NAME="${PLUGIN_NAME}.tar.gz"
 
 echo "==> Cleaning previous build..."
 rm -rf build "${ZIP_NAME}"
 
 echo "==> Installing JS dependencies..."
-npm install --silent
+npm install --legacy-peer-deps --silent
 
 echo "==> Building frontend (TypeScript → dist/index.js)..."
-npm run build
+npm run build 2>&1 | grep -v "^(node:" || true   # suppress node ESM warning
 
 echo "==> Compiling libspeedhack.so..."
 gcc -shared -fPIC -O2 \
@@ -52,15 +53,22 @@ cp speedhack/libspeedhack.so "${BUILD_DIR}/bin/"
 cp speedhack/speedhack.c  "${BUILD_DIR}/speedhack/"
 cp speedhack/Makefile     "${BUILD_DIR}/speedhack/"
 
-echo "==> Creating ${ZIP_NAME}..."
+echo "==> Creating archives..."
+# zip (preferred by Decky) — use if available, else fall back to tar.gz
 cd build
-zip -r "../${ZIP_NAME}" "${PLUGIN_NAME}/"
+if command -v zip &>/dev/null; then
+    zip -r "../${ZIP_NAME}" "${PLUGIN_NAME}/"
+    RESULT="${ZIP_NAME}"
+else
+    tar -czf "../${TAR_NAME}" "${PLUGIN_NAME}/"
+    RESULT="${TAR_NAME}"
+fi
 cd ..
 
 echo ""
-echo "Done!  →  ${ZIP_NAME}"
+echo "Done!  →  ${RESULT}"
 echo ""
 echo "Install on Steam Deck:"
-echo "  1. Copy ${ZIP_NAME} to the Deck (USB, scp, etc.)"
+echo "  1. Copy ${RESULT} to the Deck (USB, scp, etc.)"
 echo "  2. Decky menu → Developer → Install plugin from zip"
-echo "  3. Select ${ZIP_NAME} — done."
+echo "  3. Select ${RESULT} — done."

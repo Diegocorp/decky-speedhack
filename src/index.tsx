@@ -52,7 +52,7 @@ async function setAppLaunchOptions(appId: number, options: string): Promise<void
   await SteamClient?.Apps?.SetAppLaunchOptions?.(appId, options);
 }
 
-const LD_PRELOAD_MARKER = "libspeedhack.so";
+const LD_PRELOAD_MARKER = "libspeedhack";
 
 // ---------------------------------------------------------------------------
 // Styles
@@ -85,6 +85,7 @@ interface Props {
 const SpeedHackContent: VFC<Props> = ({ serverAPI }) => {
   const [speed, setSpeed]               = useState(1.0);
   const [speedStatus, setSpeedStatus]   = useState("");
+  const active = speed !== 1.0;
 
   const [runningAppId, setRunningAppId] = useState<number | null>(null);
   const [appName, setAppName]           = useState("");
@@ -101,9 +102,7 @@ const SpeedHackContent: VFC<Props> = ({ serverAPI }) => {
       const stateRes = await serverAPI.callPluginMethod<{}, { enabled: boolean; speed: number }>(
         "get_state", {}
       );
-      if (stateRes.success) {
-        setSpeed(stateRes.result.speed);
-      }
+      if (stateRes.success) setSpeed(stateRes.result.speed);
 
       // Get library path from backend
       const pathRes = await serverAPI.callPluginMethod<{}, { path: string }>(
@@ -111,9 +110,18 @@ const SpeedHackContent: VFC<Props> = ({ serverAPI }) => {
       );
       if (pathRes.success) setLibPath(pathRes.result.path);
 
-      // Detect running game
       refreshRunningGame();
     })();
+
+    // Poll backend every 3 s so the slider resets when a game closes
+    const interval = setInterval(async () => {
+      const res = await serverAPI.callPluginMethod<{}, { enabled: boolean; speed: number }>(
+        "get_state", {}
+      );
+      if (res.success) setSpeed(res.result.speed);
+    }, 3000);
+
+    return () => clearInterval(interval);
   }, []);
 
   const refreshRunningGame = async () => {
@@ -155,9 +163,15 @@ const SpeedHackContent: VFC<Props> = ({ serverAPI }) => {
     setSetupMsg("Applying...");
     try {
       const current = await getAppLaunchOptions(runningAppId);
-      // Avoid duplicates
-      const cleaned = current.replace(/LD_PRELOAD=[^\s]+ /g, "").trim();
-      const newOpts = `LD_PRELOAD=${libPath} ${cleaned || "%command%"}`.trim();
+      // Remove any previous speedhack entries to avoid duplicates
+      const cleaned = current
+        .replace(/STEAM_PRELOAD_OVERRIDE=[^\s]+ /g, "")
+        .replace(/LD_PRELOAD=[^\s]+ /g, "")
+        .trim();
+      // STEAM_PRELOAD_OVERRIDE only injects into the game process itself,
+      // not into Steam wrapper/launcher processes — this keeps Steam Input
+      // and the default controller template working correctly.
+      const newOpts = `STEAM_PRELOAD_OVERRIDE=${libPath} ${cleaned || "%command%"}`.trim();
       await setAppLaunchOptions(runningAppId, newOpts);
       setAppConfigured(true);
       setSetupMsg("Done! Restart the game once to activate.");
@@ -171,7 +185,10 @@ const SpeedHackContent: VFC<Props> = ({ serverAPI }) => {
     setSetupMsg("Removing...");
     try {
       const current = await getAppLaunchOptions(runningAppId);
-      const cleaned = current.replace(/LD_PRELOAD=[^\s]+ ?/g, "").trim();
+      const cleaned = current
+        .replace(/STEAM_PRELOAD_OVERRIDE=[^\s]+ ?/g, "")
+        .replace(/LD_PRELOAD=[^\s]+ ?/g, "")
+        .trim();
       await setAppLaunchOptions(runningAppId, cleaned);
       setAppConfigured(false);
       setSetupMsg("Removed. Restart game to fully deactivate.");
@@ -189,10 +206,36 @@ const SpeedHackContent: VFC<Props> = ({ serverAPI }) => {
     <>
       {/* ── Speed control ── */}
       <PanelSection title="Speed Control">
+        {/* Status badge */}
+        <PanelSectionRow>
+          <div style={{
+            width: "100%",
+            textAlign: "center",
+            padding: "10px 0 6px",
+            fontSize: "28px",
+            fontWeight: "bold",
+            color: active ? "#4fc3f7" : "#8b929a",
+            letterSpacing: "1px",
+          }}>
+            {active ? `${speed}x` : "1x"}
+          </div>
+        </PanelSectionRow>
+        <PanelSectionRow>
+          <div style={{
+            width: "100%",
+            textAlign: "center",
+            fontSize: "11px",
+            color: active ? "#4fc3f7" : "#8b929a",
+            marginBottom: "4px",
+          }}>
+            {active ? "⚡ Speed Hack Active" : "● Normal Speed"}
+          </div>
+        </PanelSectionRow>
+
         <PanelSectionRow>
           <SliderField
-            label={speed === 1.0 ? "Speed: 1x (Normal)" : `Speed: ${speed}x`}
-            description={speedStatus || (speed !== 1.0 ? `Active at ${speed}x` : "Normal speed")}
+            label="Adjust Speed"
+            description="Set to 1x to disable"
             value={sliderValue}
             min={1} max={32} step={1}
             onChange={handleSlider}

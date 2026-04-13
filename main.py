@@ -2,6 +2,7 @@
 main.py — Decky plugin backend for SpeedHack
 """
 
+import asyncio
 import json
 import os
 
@@ -36,15 +37,68 @@ def _write_factor(factor: float) -> None:
         f.write(str(factor))
 
 
+def _reset_speed() -> None:
+    """Reset factor file and saved settings to 1x."""
+    _write_factor(1.0)
+    s = _load_settings()
+    s["enabled"] = False
+    s["speed"] = 1.0
+    _save_settings(s)
+
+
+def _get_running_app_id() -> int:
+    """Scan /proc for a process with SteamAppId set. Returns 0 if none."""
+    try:
+        for pid in os.listdir("/proc"):
+            if not pid.isdigit():
+                continue
+            try:
+                with open(f"/proc/{pid}/environ", "rb") as f:
+                    raw = f.read().decode("utf-8", errors="replace")
+                env = dict(
+                    pair.split("=", 1)
+                    for pair in raw.split("\x00")
+                    if "=" in pair
+                )
+                val = env.get("SteamAppId", "0")
+                if val and val != "0":
+                    return int(val)
+            except (PermissionError, FileNotFoundError, ValueError):
+                continue
+    except Exception:
+        pass
+    return 0
+
+
 class Plugin:
 
     async def _main(self):
         s = _load_settings()
         _write_factor(s["speed"] if s["enabled"] else 1.0)
-        decky_plugin.logger.info("SpeedHack loaded — enabled=%s speed=%s", s["enabled"], s["speed"])
+        decky_plugin.logger.info(
+            "SpeedHack loaded — enabled=%s speed=%s", s["enabled"], s["speed"]
+        )
+        # Background task: reset speed when the running game exits
+        asyncio.create_task(self._monitor_game())
 
     async def _unload(self):
         _write_factor(1.0)
+
+    async def _monitor_game(self):
+        """Poll every 2 s; reset speed to 1x when a running game exits."""
+        last_app_id = _get_running_app_id()
+        while True:
+            await asyncio.sleep(2)
+            try:
+                current_app_id = _get_running_app_id()
+                if last_app_id != 0 and current_app_id == 0:
+                    decky_plugin.logger.info(
+                        "Game %s closed — resetting speed to 1x", last_app_id
+                    )
+                    _reset_speed()
+                last_app_id = current_app_id
+            except Exception as e:
+                decky_plugin.logger.error("_monitor_game error: %s", e)
 
     # ------------------------------------------------------------------ #
     #  Frontend-callable                                                   #
@@ -54,35 +108,7 @@ class Plugin:
         return _load_settings()
 
     async def get_lib_path(self) -> dict:
-        """Return the absolute path to libspeedhack.so."""
         return {"path": LIB_INSTALL}
-
-    async def get_running_game(self) -> dict:
-        """
-        Detect the currently running Steam game by scanning /proc for any
-        process that has SteamAppId set in its environment.
-        Returns {"app_id": int, "pid": int} or {"app_id": 0}.
-        """
-        try:
-            for pid in os.listdir("/proc"):
-                if not pid.isdigit():
-                    continue
-                try:
-                    with open(f"/proc/{pid}/environ", "rb") as f:
-                        raw = f.read().decode("utf-8", errors="replace")
-                    env = dict(
-                        pair.split("=", 1)
-                        for pair in raw.split("\x00")
-                        if "=" in pair
-                    )
-                    app_id_str = env.get("SteamAppId", "0")
-                    if app_id_str and app_id_str != "0":
-                        return {"app_id": int(app_id_str), "pid": int(pid)}
-                except (PermissionError, FileNotFoundError, ValueError):
-                    continue
-        except Exception as e:
-            decky_plugin.logger.error("get_running_game error: %s", e)
-        return {"app_id": 0}
 
     async def set_speed(self, enabled: bool, speed: float) -> dict:
         speed = max(0.1, min(speed, 32.0))
@@ -92,6 +118,10 @@ class Plugin:
         _save_settings(s)
         factor = speed if enabled else 1.0
         _write_factor(factor)
-        msg = f"Speed set to {factor}x" if enabled else "Disabled (1.0x)"
-        decky_plugin.logger.info(msg)
+        msg = f"Active at {factor}x" if enabled else "Normal speed"
+        decky_plugin.logger.info("set_speed: %s", msg)
         return {"message": msg}
+
+    async def get_running_game(self) -> dict:
+        app_id = _get_running_app_id()
+        return {"app_id": app_id}

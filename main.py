@@ -54,8 +54,35 @@ class Plugin:
         return _load_settings()
 
     async def get_lib_path(self) -> dict:
-        """Return the absolute path to libspeedhack.so (used by frontend to build the launch option)."""
+        """Return the absolute path to libspeedhack.so."""
         return {"path": LIB_INSTALL}
+
+    async def get_running_game(self) -> dict:
+        """
+        Detect the currently running Steam game by scanning /proc for any
+        process that has SteamAppId set in its environment.
+        Returns {"app_id": int, "pid": int} or {"app_id": 0}.
+        """
+        try:
+            for pid in os.listdir("/proc"):
+                if not pid.isdigit():
+                    continue
+                try:
+                    with open(f"/proc/{pid}/environ", "rb") as f:
+                        raw = f.read().decode("utf-8", errors="replace")
+                    env = dict(
+                        pair.split("=", 1)
+                        for pair in raw.split("\x00")
+                        if "=" in pair
+                    )
+                    app_id_str = env.get("SteamAppId", "0")
+                    if app_id_str and app_id_str != "0":
+                        return {"app_id": int(app_id_str), "pid": int(pid)}
+                except (PermissionError, FileNotFoundError, ValueError):
+                    continue
+        except Exception as e:
+            decky_plugin.logger.error("get_running_game error: %s", e)
+        return {"app_id": 0}
 
     async def set_speed(self, enabled: bool, speed: float) -> dict:
         speed = max(0.1, min(speed, 32.0))

@@ -17,24 +17,20 @@ import { FaFastForward } from "react-icons/fa";
 
 const SteamClient = (window as any).SteamClient;
 
-/** Returns the AppID of the currently running game, or null. */
-function getRunningAppId(): number | null {
-  try {
-    const apps: Map<number, any> =
-      (window as any).collectionStore?.allAppsCollection?.apps;
-    if (!apps) return null;
-    for (const [id, app] of apps) {
-      if (app.isRunning) return id;
-    }
-  } catch {}
-  return null;
-}
-
-/** Returns display name for an AppID. */
+/** Returns display name for an AppID using several fallback paths. */
 function getAppName(appId: number): string {
   try {
-    const app = (window as any).collectionStore?.allAppsCollection?.apps?.get(appId);
-    return app?.display_name ?? `App ${appId}`;
+    const stores = [
+      (window as any).collectionStore?.allAppsCollection?.apps,
+      (window as any).appStore?.allApps,
+    ];
+    for (const store of stores) {
+      const app = store instanceof Map
+        ? store.get(appId)
+        : store?.find?.((a: any) => a.appid === appId);
+      if (app?.display_name) return app.display_name;
+      if (app?.strDisplayName) return app.strDisplayName;
+    }
   } catch {}
   return `App ${appId}`;
 }
@@ -42,8 +38,12 @@ function getAppName(appId: number): string {
 /** Reads the current launch options for an AppID via Steam's API. */
 async function getAppLaunchOptions(appId: number): Promise<string> {
   try {
-    const details = await SteamClient?.Apps?.GetAppOverviewByAppID?.(appId);
-    return details?.launch_options ?? "";
+    // Try the most common path first
+    const overview = await SteamClient?.Apps?.GetAppOverviewByAppID?.(appId);
+    if (overview?.launch_options != null) return overview.launch_options;
+    // Fallback: read from appDetailsStore if available
+    const details = (window as any).appDetailsStore?.GetAppDetails?.(appId);
+    return details?.strLaunchOptions ?? "";
   } catch {}
   return "";
 }
@@ -120,7 +120,14 @@ const SpeedHackContent: VFC<Props> = ({ serverAPI }) => {
   }, []);
 
   const refreshRunningGame = async () => {
-    const appId = getRunningAppId();
+    // Ask the backend — it reads SteamAppId from /proc, which is reliable
+    const res = await serverAPI.callPluginMethod<{}, { app_id: number }>(
+      "get_running_game", {}
+    );
+    const appId = res.success && res.result.app_id !== 0
+      ? res.result.app_id
+      : null;
+
     setRunningAppId(appId);
     if (appId) {
       setAppName(getAppName(appId));

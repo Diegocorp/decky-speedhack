@@ -44,6 +44,7 @@ const SpeedHackContent: VFC<SpeedHackContentProps> = ({ serverAPI }) => {
   const [speedStatus, setSpeedStatus] = useState<string>("Idle");
   const [launchOption, setLaunchOption] = useState<string>("");
   const [buildStatus, setBuildStatus] = useState<string>("");
+  const [copied, setCopied] = useState<boolean>(false);
 
   // Load persisted state and launch option on mount
   useEffect(() => {
@@ -156,7 +157,7 @@ const SpeedHackContent: VFC<SpeedHackContentProps> = ({ serverAPI }) => {
       </PanelSection>
 
       <PanelSection title="Setup">
-        {/* Launch option — always visible, shown immediately on load */}
+        {/* Launch option box */}
         <PanelSectionRow>
           <div style={{ width: "100%" }}>
             <div style={{ fontSize: "12px", marginBottom: "4px", color: "#8b929a" }}>
@@ -168,10 +169,23 @@ const SpeedHackContent: VFC<SpeedHackContentProps> = ({ serverAPI }) => {
                 : "Library not built yet — click Build below"}
             </div>
             <div style={{ fontSize: "11px", color: "#8b929a", marginTop: "4px" }}>
-              Paste this into: Library → game → Properties → Launch Options
+              Paste into: Library → game → Properties → Launch Options
             </div>
           </div>
         </PanelSectionRow>
+
+        {/* Copy button — only shown when the library exists */}
+        {launchOption && !launchOption.startsWith("Library") && (
+          <PanelSectionRow>
+            {React.createElement(DialogButton as React.ElementType, {
+              onClick: async () => {
+                await navigator.clipboard.writeText(launchOption);
+                setCopied(true);
+                setTimeout(() => setCopied(false), 2000);
+              },
+            }, copied ? "Copied!" : "Copy Launch Option")}
+          </PanelSectionRow>
+        )}
 
         <PanelSectionRow>
           {React.createElement(DialogButton as React.ElementType, {

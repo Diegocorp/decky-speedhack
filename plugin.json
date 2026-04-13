@@ -1,0 +1,10 @@
+{
+  "name": "SpeedHack",
+  "author": "dakkarius",
+  "flags": [],
+  "publish": {
+    "tags": ["utility", "cheat", "speed"],
+    "description": "Control game speed multiplier on SteamOS, replicating Cheat Engine's TimeFaster functionality. Uses LD_PRELOAD to intercept Linux time syscalls.",
+    "image": "https://raw.githubusercontent.com/dakkarius/decky-speedhack/main/assets/thumbnail.png"
+  }
+}

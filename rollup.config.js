@@ -12,7 +12,7 @@ export default defineConfig({
   ],
   // react and react-dom are provided as globals by Decky runtime.
   // react-icons is NOT a Decky global so we let rollup bundle it.
-  external: ["react", "react-dom", "react/jsx-runtime", "decky-frontend-lib"],
+  external: ["react", "react-dom", "decky-frontend-lib"],
   output: {
     file: "dist/index.js",
     // No `name` — Decky loads plugins via eval(), which needs a bare
@@ -20,7 +20,6 @@ export default defineConfig({
     globals: {
       react: "SP_REACT",
       "react-dom": "SP_REACTDOM",
-      "react/jsx-runtime": "SP_REACT",
       "decky-frontend-lib": "DFL",
     },
     format: "iife",

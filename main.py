@@ -63,6 +63,12 @@ class Plugin:
 
     async def _main(self):
         """Called once when the plugin loads."""
+        # Auto-build the library on first install if not present
+        if not os.path.exists(LIB_INSTALL):
+            decky_plugin.logger.info("libspeedhack.so not found — building on first run...")
+            result = await self.install_library()
+            decky_plugin.logger.info("Auto-build result: %s", result["message"])
+
         settings = _load_settings()
         if settings["enabled"]:
             _write_factor(settings["speed"])

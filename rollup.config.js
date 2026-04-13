@@ -15,7 +15,8 @@ export default defineConfig({
   external: ["react", "react-dom", "react/jsx-runtime", "decky-frontend-lib"],
   output: {
     file: "dist/index.js",
-    name: "SpeedHackPlugin",
+    // No `name` — Decky loads plugins via eval(), which needs a bare
+    // expression (not a var declaration) to return the plugin function.
     globals: {
       react: "SP_REACT",
       "react-dom": "SP_REACTDOM",

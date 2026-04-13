@@ -45,6 +45,7 @@ const SpeedHackContent: VFC<SpeedHackContentProps> = ({ serverAPI }) => {
   const [launchOption, setLaunchOption] = useState<string>("");
   const [buildStatus, setBuildStatus] = useState<string>("");
   const [copied, setCopied] = useState<boolean>(false);
+  const [diagnostics, setDiagnostics] = useState<string>("");
 
   // Load persisted state and launch option on mount
   useEffect(() => {
@@ -197,6 +198,26 @@ const SpeedHackContent: VFC<SpeedHackContentProps> = ({ serverAPI }) => {
           <PanelSectionRow>
             <div style={{ fontSize: "11px", color: "#8b929a", wordBreak: "break-all" }}>
               {buildStatus}
+            </div>
+          </PanelSectionRow>
+        )}
+
+        <PanelSectionRow>
+          {React.createElement(DialogButton as React.ElementType, {
+            onClick: async () => {
+              setDiagnostics("Checking...");
+              const result = await serverAPI.callPluginMethod<{}, { message: string }>(
+                "get_diagnostics", {}
+              );
+              setDiagnostics(result.success ? result.result.message : "Failed");
+            },
+          }, "Run Diagnostics")}
+        </PanelSectionRow>
+
+        {diagnostics !== "" && (
+          <PanelSectionRow>
+            <div style={{ ...launchBoxStyle, fontSize: "10px", whiteSpace: "pre-wrap" }}>
+              {diagnostics}
             </div>
           </PanelSectionRow>
         )}

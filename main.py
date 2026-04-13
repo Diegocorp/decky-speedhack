@@ -149,6 +149,58 @@ class Plugin:
             decky_plugin.logger.error(msg)
             return {"message": msg}
 
+    async def get_diagnostics(self) -> dict:
+        """
+        Returns a human-readable diagnostic summary:
+          - factor file value (what the C library actually reads)
+          - library file presence
+          - whether any running process has the library loaded
+        """
+        lines = []
+
+        # 1. Factor file
+        if os.path.exists(FACTOR_FILE):
+            with open(FACTOR_FILE) as f:
+                val = f.read().strip()
+            lines.append(f"Factor file: {val}x  ✓")
+        else:
+            lines.append(f"Factor file: MISSING  ✗")
+
+        # 2. Library file
+        if os.path.exists(LIB_INSTALL):
+            size = os.path.getsize(LIB_INSTALL)
+            lines.append(f"Library: exists ({size} bytes)  ✓")
+        else:
+            lines.append(f"Library: MISSING  ✗")
+
+        # 3. Check if any running process has the library loaded via /proc
+        loaded_in = []
+        try:
+            for pid in os.listdir("/proc"):
+                if not pid.isdigit():
+                    continue
+                maps_path = f"/proc/{pid}/maps"
+                try:
+                    with open(maps_path) as f:
+                        if "libspeedhack" in f.read():
+                            cmdline_path = f"/proc/{pid}/cmdline"
+                            with open(cmdline_path) as cf:
+                                cmd = cf.read().replace("\x00", " ").strip()[:40]
+                            loaded_in.append(f"PID {pid}: {cmd}")
+                except (PermissionError, FileNotFoundError):
+                    pass
+        except Exception as e:
+            lines.append(f"Process scan error: {e}")
+
+        if loaded_in:
+            lines.append(f"Loaded in {len(loaded_in)} process(es):")
+            lines.extend(f"  {p}" for p in loaded_in[:3])
+        else:
+            lines.append("Library NOT loaded in any running process")
+            lines.append("→ Launch game with LD_PRELOAD launch option first")
+
+        return {"message": "\n".join(lines)}
+
     async def get_launch_option(self) -> dict:
         """
         Return the Steam launch option string the user should add to a game.

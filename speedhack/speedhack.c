@@ -26,6 +26,7 @@
 #include <string.h>
 #include <sys/time.h>
 #include <time.h>
+#include <unistd.h>
 
 /* Path where the Decky backend writes the current speed multiplier */
 #define SPEEDHACK_FACTOR_FILE "/tmp/speedhack_factor"
@@ -37,6 +38,7 @@
 
 static double g_factor = 1.0;          /* current speed multiplier        */
 static int    g_initialized = 0;       /* set to 1 after first call        */
+static int    g_disabled = 0;          /* 1 when loaded into a non-game process */
 
 /* Real time of first interception — used to compute elapsed deltas */
 static struct timespec g_base_real;    /* real wall-clock at init          */
@@ -51,6 +53,46 @@ static int  (*real_gettimeofday)(struct timeval *, void *) = NULL;
 static time_t (*real_time)(time_t *) = NULL;
 
 /* ---------- helpers ---------- */
+
+/*
+ * Called once when the library is loaded by the dynamic linker.
+ * Reads /proc/self/exe to get the process name and disables the hook
+ * for Steam wrapper/launcher processes so they keep normal timing —
+ * this prevents LD_PRELOAD from breaking Steam Input and the default
+ * Steam Deck controller template.
+ */
+__attribute__((constructor))
+static void speedhack_load(void) {
+    char exe[512] = "";
+    ssize_t len = readlink("/proc/self/exe", exe, sizeof(exe) - 1);
+    if (len > 0) {
+        exe[len] = '\0';
+        /* basename */
+        const char *name = strrchr(exe, '/');
+        name = name ? name + 1 : exe;
+
+        /* processes that must NOT have their time scaled */
+        static const char *const blocklist[] = {
+            "reaper",
+            "pressure-vessel",
+            "steam-runtime",
+            "scout-on-soldier",
+            "steam-launch-wrapper",
+            "SteamLaunch",
+            "python",
+            "python3",
+            "bash",
+            "sh",
+            NULL
+        };
+        for (int i = 0; blocklist[i]; i++) {
+            if (strncmp(name, blocklist[i], strlen(blocklist[i])) == 0) {
+                g_disabled = 1;
+                return;
+            }
+        }
+    }
+}
 
 static void load_real_functions(void) {
     if (!real_clock_gettime)
@@ -124,7 +166,7 @@ static void scale_timespec(clockid_t clk_id, struct timespec *ts) {
 int clock_gettime(clockid_t clk_id, struct timespec *tp) {
     load_real_functions();
     int ret = real_clock_gettime(clk_id, tp);
-    if (ret != 0) return ret;
+    if (ret != 0 || g_disabled) return ret;
 
     initialize();
 
@@ -141,7 +183,7 @@ int clock_gettime(clockid_t clk_id, struct timespec *tp) {
 int gettimeofday(struct timeval *tv, void *tz) {
     load_real_functions();
     int ret = real_gettimeofday(tv, tz);
-    if (ret != 0 || !tv) return ret;
+    if (ret != 0 || !tv || g_disabled) return ret;
 
     initialize();
 
@@ -162,6 +204,7 @@ int gettimeofday(struct timeval *tv, void *tz) {
 
 time_t time(time_t *tloc) {
     load_real_functions();
+    if (g_disabled) return real_time(tloc);
     initialize();
 
     struct timespec ts;

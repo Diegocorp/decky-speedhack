@@ -165,13 +165,9 @@ const SpeedHackContent: VFC<Props> = ({ serverAPI }) => {
       const current = await getAppLaunchOptions(runningAppId);
       // Remove any previous speedhack entries to avoid duplicates
       const cleaned = current
-        .replace(/STEAM_PRELOAD_OVERRIDE=[^\s]+ /g, "")
         .replace(/LD_PRELOAD=[^\s]+ /g, "")
         .trim();
-      // STEAM_PRELOAD_OVERRIDE only injects into the game process itself,
-      // not into Steam wrapper/launcher processes — this keeps Steam Input
-      // and the default controller template working correctly.
-      const newOpts = `STEAM_PRELOAD_OVERRIDE=${libPath} ${cleaned || "%command%"}`.trim();
+      const newOpts = `LD_PRELOAD=${libPath} ${cleaned || "%command%"}`.trim();
       await setAppLaunchOptions(runningAppId, newOpts);
       setAppConfigured(true);
       setSetupMsg("Done! Restart the game once to activate.");
@@ -186,7 +182,6 @@ const SpeedHackContent: VFC<Props> = ({ serverAPI }) => {
     try {
       const current = await getAppLaunchOptions(runningAppId);
       const cleaned = current
-        .replace(/STEAM_PRELOAD_OVERRIDE=[^\s]+ ?/g, "")
         .replace(/LD_PRELOAD=[^\s]+ ?/g, "")
         .trim();
       await setAppLaunchOptions(runningAppId, cleaned);

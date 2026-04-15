@@ -1,6 +1,6 @@
 CC      = gcc
 CFLAGS  = -shared -fPIC -O2 -Wall -Wextra
-LDFLAGS = -ldl
+LDFLAGS = -ldl -lpthread
 TARGET  = libspeedhack.so
 SRC     = speedhack.c
 

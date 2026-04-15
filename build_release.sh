@@ -30,14 +30,14 @@ if docker info &>/dev/null 2>&1; then
     docker run --rm \
         -v "$(pwd)/speedhack:/work" \
         "${STEAM_SDK_IMAGE}" \
-        gcc -shared -fPIC -O2 -o /work/libspeedhack.so /work/speedhack.c -ldl
+        gcc -shared -fPIC -O2 -o /work/libspeedhack.so /work/speedhack.c -ldl -lpthread
     echo "    Compiled inside Steam Runtime SDK ✓"
 else
     echo "    Docker not available — compiling with host gcc (may need rebuild on Deck)"
     gcc -shared -fPIC -O2 \
         -o speedhack/libspeedhack.so \
         speedhack/speedhack.c \
-        -ldl
+        -ldl -lpthread
 fi
 
 echo "==> Assembling plugin folder..."

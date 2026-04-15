@@ -93,6 +93,10 @@ const SpeedHackContent: VFC<Props> = ({ serverAPI }) => {
   const [libPath, setLibPath]           = useState("");
   const [setupMsg, setSetupMsg]         = useState("");
 
+  const [debugEnabled, setDebugEnabled] = useState(false);
+  const [debugLog, setDebugLog]         = useState("");
+  const [debugExpanded, setDebugExpanded] = useState(false);
+
   // -------------------------------------------------------------------------
   // On mount: load state + detect running game
   // -------------------------------------------------------------------------
@@ -111,6 +115,12 @@ const SpeedHackContent: VFC<Props> = ({ serverAPI }) => {
       if (pathRes.success) setLibPath(pathRes.result.path);
 
       refreshRunningGame();
+
+      // Restore debug toggle state
+      const dbgState = await serverAPI.callPluginMethod<{}, { enabled: boolean }>(
+        "get_debug_state", {}
+      );
+      if (dbgState.success) setDebugEnabled(dbgState.result.enabled);
     })();
 
     // Poll backend every 3 s so the slider resets when a game closes
@@ -189,6 +199,38 @@ const SpeedHackContent: VFC<Props> = ({ serverAPI }) => {
       setSetupMsg("Removed. Restart game to fully deactivate.");
     } catch (e) {
       setSetupMsg(`Error: ${e}`);
+    }
+  };
+
+  // -------------------------------------------------------------------------
+  // Debug helpers
+  // -------------------------------------------------------------------------
+  const handleToggleDebug = async () => {
+    if (debugEnabled) {
+      await serverAPI.callPluginMethod("disable_debug", {});
+      setDebugEnabled(false);
+    } else {
+      await serverAPI.callPluginMethod("enable_debug", {});
+      setDebugEnabled(true);
+      setDebugLog("Debug enabled. Launch the game and play for a few seconds, then press Refresh Log.");
+    }
+  };
+
+  const handleRefreshLog = async () => {
+    const res = await serverAPI.callPluginMethod<{}, { log: string }>("get_debug_log", {});
+    if (res.success) setDebugLog(res.result.log);
+  };
+
+  const [saveMsg, setSaveMsg] = useState("");
+  const handleSaveLog = async () => {
+    setSaveMsg("Saving...");
+    const res = await serverAPI.callPluginMethod<{}, { ok: boolean; path?: string; error?: string }>(
+      "save_debug_log_to_desktop", {}
+    );
+    if (res.success && res.result.ok) {
+      setSaveMsg(`Saved to Desktop/speedhack_debug.txt`);
+    } else {
+      setSaveMsg(res.success ? (res.result.error ?? "Failed") : "RPC error");
     }
   };
 
@@ -299,6 +341,67 @@ const SpeedHackContent: VFC<Props> = ({ serverAPI }) => {
               works live — no restart needed.
             </div>
           </PanelSectionRow>
+        )}
+      </PanelSection>
+
+      {/* ── Debug ── */}
+      <PanelSection title="Debug">
+        <PanelSectionRow>
+          <div style={{ width: "100%", fontSize: "11px", color: "#8b929a" }}>
+            Enable to capture which libraries are calling clock_gettime.
+            Launch the game, play a few seconds, then refresh.
+          </div>
+        </PanelSectionRow>
+
+        <PanelSectionRow>
+          {React.createElement(DialogButton as React.ElementType, {
+            onClick: handleToggleDebug,
+            style: { background: debugEnabled ? "#c62828" : undefined },
+          }, debugEnabled ? "Disable Debug Log" : "Enable Debug Log")}
+        </PanelSectionRow>
+
+        {debugEnabled && (
+          <>
+            <PanelSectionRow>
+              <ButtonItem label="Refresh Log" layout="below" onClick={handleRefreshLog} />
+            </PanelSectionRow>
+            {debugLog !== "" && (
+              <>
+                <PanelSectionRow>
+                  <ButtonItem label="Save Log to Desktop" layout="below" onClick={handleSaveLog} />
+                </PanelSectionRow>
+                {saveMsg !== "" && (
+                  <PanelSectionRow>
+                    <div style={hintStyle}>{saveMsg}</div>
+                  </PanelSectionRow>
+                )}
+                <PanelSectionRow>
+                  <div
+                    onClick={() => setDebugExpanded(e => !e)}
+                    style={{
+                      width: "100%",
+                      background: "rgba(0,0,0,0.4)",
+                      borderRadius: "4px",
+                      padding: "6px",
+                      fontSize: "9px",
+                      fontFamily: "monospace",
+                      color: "#c6d4df",
+                      whiteSpace: "pre-wrap",
+                      wordBreak: "break-all",
+                      maxHeight: debugExpanded ? "600px" : "120px",
+                      overflowY: "auto",
+                      cursor: "pointer",
+                    }}
+                  >
+                    {debugLog || "No log yet."}
+                  </div>
+                </PanelSectionRow>
+                <PanelSectionRow>
+                  <div style={hintStyle}>Tap the log box to expand/collapse.</div>
+                </PanelSectionRow>
+              </>
+            )}
+          </>
         )}
       </PanelSection>
     </>

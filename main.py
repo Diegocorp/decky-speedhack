@@ -11,6 +11,8 @@ import decky_plugin  # type: ignore
 PLUGIN_DIR    = decky_plugin.DECKY_PLUGIN_DIR
 LIB_INSTALL   = os.path.join(PLUGIN_DIR, "bin", "libspeedhack.so")
 FACTOR_FILE   = "/tmp/speedhack_factor"
+DEBUG_TRIGGER = "/tmp/speedhack_debug"
+DEBUG_LOG     = "/tmp/speedhack_debug.log"
 SETTINGS_FILE = os.path.join(decky_plugin.DECKY_PLUGIN_SETTINGS_DIR, "settings.json")
 
 DEFAULT_SETTINGS = {"enabled": False, "speed": 1.0}
@@ -125,3 +127,55 @@ class Plugin:
     async def get_running_game(self) -> dict:
         app_id = _get_running_app_id()
         return {"app_id": app_id}
+
+    # ------------------------------------------------------------------ #
+    #  Debug logging                                                        #
+    # ------------------------------------------------------------------ #
+
+    async def enable_debug(self) -> dict:
+        """Create the trigger file so the C library starts logging."""
+        # Clear old log first
+        if os.path.exists(DEBUG_LOG):
+            os.remove(DEBUG_LOG)
+        open(DEBUG_TRIGGER, "w").close()
+        decky_plugin.logger.info("SpeedHack debug logging ENABLED")
+        return {"enabled": True}
+
+    async def disable_debug(self) -> dict:
+        """Remove the trigger file to stop logging."""
+        if os.path.exists(DEBUG_TRIGGER):
+            os.remove(DEBUG_TRIGGER)
+        decky_plugin.logger.info("SpeedHack debug logging DISABLED")
+        return {"enabled": False}
+
+    async def get_debug_state(self) -> dict:
+        return {"enabled": os.path.exists(DEBUG_TRIGGER)}
+
+    async def get_debug_log(self) -> dict:
+        """Return the contents of the debug log (last 4000 chars)."""
+        try:
+            with open(DEBUG_LOG, "r") as f:
+                content = f.read()
+            # Return last 4000 chars so the UI doesn't overflow
+            return {"log": content[-4000:] if len(content) > 4000 else content}
+        except FileNotFoundError:
+            return {"log": "No log yet.\nEnable debug, launch/play the game, then refresh."}
+        except Exception as e:
+            return {"log": f"Error reading log: {e}"}
+
+    async def save_debug_log_to_desktop(self) -> dict:
+        """Copy the debug log to ~/Desktop/speedhack_debug.txt."""
+        desktop = os.path.expanduser("~/Desktop")
+        dest = os.path.join(desktop, "speedhack_debug.txt")
+        try:
+            with open(DEBUG_LOG, "r") as f:
+                content = f.read()
+            os.makedirs(desktop, exist_ok=True)
+            with open(dest, "w") as f:
+                f.write(content)
+            decky_plugin.logger.info("Debug log saved to %s", dest)
+            return {"ok": True, "path": dest}
+        except FileNotFoundError:
+            return {"ok": False, "error": "No log yet. Enable debug and play the game first."}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
